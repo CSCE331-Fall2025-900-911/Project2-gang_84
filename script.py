@@ -23,7 +23,7 @@
 # Iced coffee
 
 #create a dict of drinks
-timedelta = 39
+timedelta = 45
 totalSalesPerDay = 300
 menu = { 
     "Milk series": { #roughly $262500 of revenue 
@@ -53,7 +53,6 @@ menu = {
 }
 
 toppings = {
-    "None": 0.00,
     "Pearls (tapioca balls)" : 1.75,
     "Crystal Boba" : 2.50,
     "Lychee Jelly" : 2.75,
@@ -75,33 +74,88 @@ extras = ["None", "cups", "straws", "napkins", "flatware", "to-go boxes", "bags"
 # data should have at least 39 weeks of sales history
 import pandas as pd
 import datetime
-from random import randint, choice
+from random import randint, choice, choices
 #dataframe that can hold menu orders items
 ordersItemsTable = pd.DataFrame(columns=["ItemID", "Drink", "Modifications", "Toppings", "Extras"])
+ordersTable = pd.DataFrame(columns=["OrderID", "Date", "Time", "TotalCost", "ItemIds"])
+employeeTable = pd.DataFrame(columns=["EmployeeID", "Name", "Role", "PhoneNumber", "Login"])
+
+def generate_weighted_date():
+    """Generate a date with emphasis on Fridays and Saturdays"""
+    base_date = datetime.datetime.now()
+    days_back = randint(0, timedelta)
+    date = base_date - datetime.timedelta(days=days_back)
+    
+    # If it's not Friday (4) or Saturday (5), give it a chance to be moved to weekend
+    if date.weekday() not in [4, 5] and choice([True, False, False]):  # 33% chance to move to weekend
+        days_to_weekend = (4 - date.weekday()) % 7  # Days to next Friday
+        if choice([True, False]):  # Choose Friday or Saturday
+            date = date + datetime.timedelta(days=days_to_weekend)
+        else:
+            date = date + datetime.timedelta(days=days_to_weekend + 1)
+    
+    return date.date()
 
 i = 0
 totalCost = 0
+orderId = 0
 totalPrice = {"Milk series": 262500, "Fruit series": 225000, "Ice blend": 150000, "Coffee": 112500}
+
 while not all(value < 0 for value in totalPrice.values()):
-    for drinkCategory in menu.keys():
-        if totalPrice[drinkCategory] > 0: 
-            drink = choice(list(menu[drinkCategory].keys()))
-            price = menu[drinkCategory][drink]
+    itemsPerOrder = choices([1, 2, 3, 4], weights=[4, 3, 2, 1])[0]  # Weighted choice favoring fewer items
+    itemIds = []
+    totalOrderCost = 0
+    
+    for _ in range(itemsPerOrder):
+        # Pick a random category that still has remaining revenue
+        available_categories = [cat for cat in menu.keys() if totalPrice[cat] > 0]
+        if not available_categories:
+            break
             
-            toppingChoice = choice(list(toppings.keys()))
-            toppingPrice = toppings[toppingChoice]
-            
-            modSweetness = choice(modifications["sweetness"])
-            modIce = choice(modifications["ice"])
-            modification_str = f"{modSweetness}, {modIce}"
-            
-            extrasChoice = choice(extras)
-            
-            cost = price + toppingPrice
-            totalPrice[drinkCategory] -= cost
-            totalCost += cost
-            ordersItemsTable.loc[i] = [i, drink, modification_str, toppingChoice, extrasChoice]
-            i += 1
+        drinkCategory = choice(available_categories)
+        drink = choice(list(menu[drinkCategory].keys()))
+        price = menu[drinkCategory][drink]
+
+        # Allow multiple toppings (0 to 3 random toppings)
+        num_toppings = randint(0, 3)
+        topping_choices = [choice(list(toppings.keys())) for _ in range(num_toppings)]
+        # Remove duplicates and keep order
+        seen = set()
+        topping_choices = [x for x in topping_choices if not (x in seen or seen.add(x))]            
+        if not topping_choices:
+            toppingPrice = 0
+            toppings_str = "None"
+        else:
+            toppingPrice = sum(toppings[t] for t in topping_choices if t in toppings)
+            toppings_str = ", ".join(topping_choices)
+        
+        modSweetness = choice(modifications["sweetness"])
+        modIce = choice(modifications["ice"])
+        modification_str = f"{modSweetness}, {modIce}"
+        
+        num_extras = randint(0, 2)
+        extrasChoice = ", ".join([choice(extras) for _ in range(num_extras)]) if num_extras > 0 else "None"
+        
+        cost = price + toppingPrice
+        totalPrice[drinkCategory] -= cost
+        totalCost += cost
+        ordersItemsTable.loc[i] = [i, drink, modification_str, toppings_str, extrasChoice]
+        itemIds.append(i)
+        totalOrderCost += cost
+        i += 1
+    
+    # Add order to ordersTable
+    if itemIds:  # Only add if we have items
+        order_date = generate_weighted_date()
+        order_time = datetime.time(hour=randint(8, 21), minute=randint(0, 59))
+        ordersTable.loc[orderId] = [orderId, order_date, order_time, round(totalOrderCost, 2), ','.join(map(str, itemIds))]
+        orderId += 1
+
 ordersItemsTable.to_csv('orders_items.csv', index=False)
-print(totalCost)
-print(ordersItemsTable)
+ordersTable.to_csv('orders.csv', index=False)
+print(f"Total Cost: ${totalCost}")
+print(f"Total Orders: {len(ordersTable)}")
+print("Orders Table:")
+print(ordersTable.head())
+print("Order Items Table:")
+print(ordersItemsTable.head())
